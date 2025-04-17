@@ -162,13 +162,18 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_PASSWORD='guva bovg ckva sfip'
-EMAIL_HOST_USER='suzzainnegathu@gmail.com' 
+import os
+from decouple import config
 
-PAYSTACK_SECRET_KEY='sk_test_41d0e678551c00c89906485a1f4f0c6985ed9faf'
-PAYSTACK_PUBLIC_KEY='pk_test_3f5891c7c1997586f49bd3a16a7ea1a5951a8979'
-FRONTEND_URL = 'http://localhost:5173'
+EMAIL_BACKEND = config('EMAIL_BACKEND')
+EMAIL_HOST = config('EMAIL_HOST')
+EMAIL_PORT = config('EMAIL_PORT', cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+
+ 
+
+PAYSTACK_SECRET_KEY= os.getenv('PAYSTACK_SECRET_KEY')
+PAYSTACK_PUBLIC_KEY=os.getenv('PAYSTACK_PUBLIC_KEY')
+FRONTEND_URL = os.getenv('FRONTEND_URL')

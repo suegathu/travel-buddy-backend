@@ -26,19 +26,33 @@ PEXELS_API_KEY = os.getenv('PEXELS_API_KEY')
 
 CACHE_EXPIRY_DAYS = 7
 
-# Default restaurant images dictionary
-DEFAULT_RESTAURANT_IMAGES = {
-    'generic': [
-        "https://www.google.com/url?sa=i&url=https%3A%2F%2Fcommons.wikimedia.org%2Fwiki%2FFile%3AIsland_Shangri-La%2C_Hong_Kong_-_Restaurant_Petrus.png&psig=AOvVaw0PKgHdo4lTa5BCEYm0ezup&ust=1744878681962000&source=images&cd=vfe&opi=89978449&ved=0CBEQjRxqFwoTCPCn_u6R3IwDFQAAAAAdAAAAABAE",
-        "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.pexels.com%2Fsearch%2Frestaurant%2F&psig=AOvVaw0PKgHdo4lTa5BCEYm0ezup&ust=1744878681962000&source=images&cd=vfe&opi=89978449&ved=0CBEQjRxqFwoTCPCn_u6R3IwDFQAAAAAdAAAAABAJ",
-        "https://www.google.com/url?sa=i&url=https%3A%2F%2Funsplash.com%2Fs%2Fphotos%2Frestaurant&psig=AOvVaw0PKgHdo4lTa5BCEYm0ezup&ust=1744878681962000&source=images&cd=vfe&opi=89978449&ved=0CBEQjRxqFwoTCPCn_u6R3IwDFQAAAAAdAAAAABAQ",
-        "https://www.google.com/imgres?imgurl=https%3A%2F%2Fmedia.istockphoto.com%2Fid%2F1316145932%2Fphoto%2Ftable-top-view-of-spicy-food.jpg%3Fs%3D612x612%26w%3D0%26k%3D20%26c%3DeaKRSIAoRGHMibSfahMyQS6iFADyVy1pnPdy1O5rZ98%3D&tbnid=2PUwJ0bMDRqiBM&vet=10CAoQxiAoCWoXChMI8Kf-7pHcjAMVAAAAAB0AAAAAEBU..i&imgrefurl=https%3A%2F%2Fwww.istockphoto.com%2Fphotos%2Ffood-and-drink-table&docid=aAdn_QbINBA8IM&w=612&h=408&itg=1&q=restaurant%20image%20png&ved=0CAoQxiAoCWoXChMI8Kf-7pHcjAMVAAAAAB0AAAAAEBU",
-        "https://www.google.com/url?sa=i&url=https%3A%2F%2Flgbtqsd.news%2Fcallie-a-mediterranean-feast%2F&psig=AOvVaw0PKgHdo4lTa5BCEYm0ezup&ust=1744878681962000&source=images&cd=vfe&opi=89978449&ved=0CBEQjRxqFwoTCPCn_u6R3IwDFQAAAAAdAAAAABAe",
-        "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.sandiegoreader.com%2Fnews%2F2022%2Fjun%2F24%2Ffeast-callie-michelin-bib-comes-east-village%2F&psig=AOvVaw0PKgHdo4lTa5BCEYm0ezup&ust=1744878681962000&source=images&cd=vfe&opi=89978449&ved=0CBEQjRxqFwoTCPCn_u6R3IwDFQAAAAAdAAAAABAl"
+# Updated default restaurant images dictionary with working URLs
+DEFAULT_PLACE_IMAGES = {
+    'hotel': [
+        "https://images.pexels.com/photos/2507010/pexels-photo-2507010.jpeg",
+        "https://images.pexels.com/photos/2096983/pexels-photo-2096983.jpeg",
+        "https://images.pexels.com/photos/1838554/pexels-photo-1838554.jpeg",
     ],
-    # You could add categories and specific URLs if needed
-    # 'italian': ["URL_TO_ITALIAN_RESTAURANT_1", "URL_TO_ITALIAN_RESTAURANT_2"],
-    # 'seafood': ["URL_TO_SEAFOOD_RESTAURANT_1"],
+    'restaurant': [
+        "https://images.pexels.com/photos/67468/pexels-photo-67468.jpeg",
+        "https://images.pexels.com/photos/260922/pexels-photo-260922.jpeg",
+        "https://images.pexels.com/photos/941861/pexels-photo-941861.jpeg",
+        "https://images.pexels.com/photos/1307698/pexels-photo-1307698.jpeg",
+        "https://images.pexels.com/photos/696218/pexels-photo-696218.jpeg",
+    ],
+    'attraction': [
+        "https://images.pexels.com/photos/1619317/pexels-photo-1619317.jpeg",
+        "https://images.pexels.com/photos/451441/pexels-photo-451441.jpeg",
+        "https://images.pexels.com/photos/1171386/pexels-photo-1171386.jpeg",
+    ],
+    'italian': [
+        "https://images.pexels.com/photos/1566837/pexels-photo-1566837.jpeg",
+        "https://images.pexels.com/photos/1527603/pexels-photo-1527603.jpeg"
+    ],
+    'seafood': [
+        "https://images.pexels.com/photos/262978/pexels-photo-262978.jpeg",
+        "https://images.pexels.com/photos/566345/pexels-photo-566345.jpeg"
+    ]
 }
 
 # Category tags for OSM queries
@@ -46,6 +60,14 @@ CATEGORY_TAGS = {
     'hotel': [('tourism', 'hotel'), ('building', 'hotel')],
     'restaurant': [('amenity', 'restaurant'), ('tourism', 'restaurant')],
     'attraction': [('tourism', 'attraction'), ('leisure', 'park')],
+}
+
+# Price range configuration by place type
+PRICE_RANGES = {
+    'hotel': (50, 500),  # Hotels: $50-$500
+    'restaurant': (10, 100),  # Restaurants: $10-$100
+    'attraction': (5, 50),  # Attractions: $5-$50
+    'default': (10, 200)  # Default range for any other type
 }
 
 # Helper functions
@@ -60,12 +82,27 @@ def haversine(lat1, lon1, lat2, lon2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
+def generate_random_price(place_type):
+    """Generate a random price based on place type."""
+    min_price, max_price = PRICE_RANGES.get(place_type.lower(), PRICE_RANGES['default'])
+    return round(random.uniform(min_price, max_price), 2)
+
+def generate_random_rating():
+    """Generate a random rating between 1.0 and 5.0."""
+    # Skew towards higher ratings (more realistic)
+    # Higher probability for ratings between 3.5-4.8
+    base_rating = random.uniform(2.5, 5.0)
+    # Apply some variance, but keep within 1-5 range
+    final_rating = min(5.0, max(1.0, base_rating + random.uniform(-0.5, 0.3)))
+    return round(final_rating, 1)
+
 def get_image_url(query, category='travel'):
     """Get an image URL from Pexels API with fallback options."""
-    if category == 'restaurant':
-        # Randomly select from the 'generic' list of default restaurant images
-        return random.choice(DEFAULT_RESTAURANT_IMAGES.get('generic', [""]))
-
+    # First check if we have default images for this category
+    if category in DEFAULT_PLACE_IMAGES:
+        return random.choice(DEFAULT_PLACE_IMAGES[category])
+    
+    # Try Pexels API for other categories
     headers = {"Authorization": PEXELS_API_KEY}
     params = {"query": query, "per_page": 1}
     print(f"📸 Querying Pexels for: {query} | Category: {category}")
@@ -81,8 +118,8 @@ def get_image_url(query, category='travel'):
     # Fallback options if primary search fails
     fallback_keywords = {
         'hotel': ['luxury hotel', 'resort', 'hotel room'],
-        'restaurant': ['restaurant interior', 'fine dining', 'cafe exterior', 'gourmet food', 'restaurant building'],
-        'attraction': ['landmark', 'tourist attraction', 'monument', 'famous building'],
+        'restaurant': ['restaurant interior', 'fine dining', 'cafe exterior'],
+        'attraction': ['landmark', 'tourist attraction', 'monument'],
         'travel': ['adventure', 'vacation', 'scenic view']
     }
 
@@ -96,7 +133,8 @@ def get_image_url(query, category='travel'):
     except Exception as e:
         print(f"⚠️ Fallback Pexels error: {e}")
 
-    return ''
+    # Last resort placeholder
+    return 'https://via.placeholder.com/300x200?text=No+Image+Available'
 
 def get_city_bbox_from_nominatim(city_name):
     """Get bounding box coordinates for a city using Nominatim."""
@@ -167,10 +205,17 @@ class PlaceListView(generics.ListAPIView):
 
         # Check if we need to refresh data
         refresh = self.request.query_params.get('refresh', 'false').lower() == 'true'
-        if refresh and place_type and (city or self.request.query_params.get('lat')):
+        if refresh and (place_type or city or self.request.query_params.get('lat')):
             # If refresh is requested and we have location info, try to get fresh data
             try:
-                self._refresh_place_data(place_type, city)
+                # If place_type is specified, refresh only that type
+                if place_type:
+                    self._refresh_place_data(place_type, city)
+                else:
+                    # Otherwise refresh all place types
+                    for pt in CATEGORY_TAGS.keys():
+                        self._refresh_place_data(pt, city)
+                        
                 # Re-query to get fresh data
                 queryset = Place.objects.all().order_by('id')
                 if place_type:
@@ -181,10 +226,24 @@ class PlaceListView(generics.ListAPIView):
                 print(f"Error refreshing data: {e}")
                 # Continue with existing data
                 pass
+        
+        # For places with no price or rating, generate and save them
+        for place in queryset:
+            updated = False
+            if place.price is None or place.price == 0:
+                place.price = generate_random_price(place.place_type)
+                updated = True
+            if place.rating is None or place.rating == 0:
+                place.rating = generate_random_rating()
+                updated = True
+            if place.image_url is None or place.image_url == "":
+                place.image_url = get_image_url(f"{place.name} {place.place_type}", place.place_type)
+                updated = True
+            if updated:
+                place.save()
 
         print(f"Query returned {queryset.count()} places")
         return queryset
-
 
     def _refresh_place_data(self, place_type, city=None):
         """Internal method to refresh place data from external sources."""
@@ -241,13 +300,14 @@ class PlaceListView(generics.ListAPIView):
                     longitude__range=(lon - 0.0001, lon + 0.0001)
                 )
 
-                image_url = ""
-                if place_type == 'restaurant':
-                    image_url = random.choice(DEFAULT_RESTAURANT_IMAGES.get('generic', [""]))
-                else:
-                    image_url = get_image_url(f"{name} {place_type}", place_type)
+                # Get an image URL for the place based on its type
+                image_url = get_image_url(f"{name} {place_type}", place_type)
 
-                price = round(random.uniform(10, 500), 2)
+                # Generate random price based on place type
+                price = generate_random_price(place_type)
+                
+                # Generate random rating
+                rating = generate_random_rating()
 
                 if existing_places.exists():
                     # Update existing place
@@ -258,7 +318,8 @@ class PlaceListView(generics.ListAPIView):
                         place.address = address
                     place.last_updated = now
                     place.image_url = image_url # Force update image URL even if it exists
-                    place.price = price # Force update price
+                    place.price = price # Update with new random price
+                    place.rating = rating # Update with new random rating
                     place.save()
                     updated_count += 1
                 else:
@@ -272,7 +333,8 @@ class PlaceListView(generics.ListAPIView):
                         city=city,
                         image_url=image_url,
                         last_updated=now,
-                        price=price
+                        price=price,
+                        rating=rating
                     )
                     created_count += 1
 
@@ -323,4 +385,3 @@ class UserBookingDetailAPIView(generics.RetrieveAPIView):
     def get_queryset(self):
         # Ensures user can only retrieve their own bookings
         return Booking.objects.filter(user=self.request.user)
-   
