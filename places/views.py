@@ -11,9 +11,11 @@ import requests
 import random
 import math
 import django_filters
-
+from rest_framework import generics, permissions
 from .models import Place, Booking
-from .serializers import PlaceSerializer, BookingSerializer, AdminBookingSerializer
+from .serializers import PlaceSerializer, BookingSerializer, AdminBookingSerializer, BookingDetailSerializer
+from rest_framework.generics import ListCreateAPIView
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
 import os
 from dotenv import load_dotenv
@@ -249,21 +251,40 @@ class PlaceListView(generics.ListAPIView):
         """Internal method to refresh place data from external sources."""
         print(f"Attempting to refresh {place_type} data for {city or 'unknown location'}")
 
-        # Get bounding box if city provided
+        # City bounding box overrides (centered downtown areas)
+        CITY_BBOX_OVERRIDES = {
+            "new york": {"south": 40.70, "north": 40.75, "west": -74.01, "east": -73.97},
+            "toronto": {"south": 43.64, "north": 43.66, "west": -79.39, "east": -79.37},
+        }
+
         bbox = None
         if city:
-            bbox = get_city_bbox_from_nominatim(city)
-            if not bbox:
-                print(f"Could not get bbox for city: {city}")
-                return
-        else:
-            # Would need lat/lon params here in a real implementation
-            return
+            city_lower = city.strip().lower()
+            if city_lower in CITY_BBOX_OVERRIDES:
+                bbox = CITY_BBOX_OVERRIDES[city_lower]
+                print(f"Using custom bounding box for {city}")
+            else:
+                bbox = get_city_bbox_from_nominatim(city)
+                if not bbox:
+                    print(f"Could not get bbox for city: {city}")
+                    return
 
-        # Get tags for OSM query
+                # Shrink large bounding boxes to reduce Overpass load
+                lat_range = float(bbox["north"]) - float(bbox["south"])
+                lon_range = float(bbox["east"]) - float(bbox["west"])
+                if lat_range > 0.3 or lon_range > 0.3:
+                    print("Shrinking large bounding box")
+                    shrink_factor = 0.05
+                    bbox["south"] = float(bbox["south"]) + shrink_factor
+                    bbox["north"] = float(bbox["north"]) - shrink_factor
+                    bbox["west"] = float(bbox["west"]) + shrink_factor
+                    bbox["east"] = float(bbox["east"]) - shrink_factor
+        else:
+            return  # No location info
+
         tags = CATEGORY_TAGS.get(place_type, [('tourism', place_type)])
 
-        # Construct Overpass query
+        # Build Overpass query
         query_parts = []
         for key, value in tags:
             query_parts.append(f"""
@@ -272,9 +293,8 @@ class PlaceListView(generics.ListAPIView):
             """)
         query = f"[out:json];({''.join(query_parts)});out center;"
 
-        # Execute query and process results
         try:
-            osm_res = requests.get("https://overpass-api.de/api/interpreter", params={"data": query})
+            osm_res = requests.get("https://overpass-api.de/api/interpreter", params={"data": query}, timeout=30)
             osm_res.raise_for_status()
             elements = osm_res.json().get("elements", [])
             print(f"Found {len(elements)} OSM elements")
@@ -293,37 +313,29 @@ class PlaceListView(generics.ListAPIView):
                 if not lat or not lon:
                     continue
 
-                # Check if place exists by location
                 existing_places = Place.objects.filter(
                     place_type=place_type,
                     latitude__range=(lat - 0.0001, lat + 0.0001),
                     longitude__range=(lon - 0.0001, lon + 0.0001)
                 )
 
-                # Get an image URL for the place based on its type
                 image_url = get_image_url(f"{name} {place_type}", place_type)
-
-                # Generate random price based on place type
                 price = generate_random_price(place_type)
-                
-                # Generate random rating
                 rating = generate_random_rating()
 
                 if existing_places.exists():
-                    # Update existing place
                     place = existing_places.first()
                     if place.name != name and name != "Unnamed":
                         place.name = name
                     if place.address != address and address:
                         place.address = address
                     place.last_updated = now
-                    place.image_url = image_url # Force update image URL even if it exists
-                    place.price = price # Update with new random price
-                    place.rating = rating # Update with new random rating
+                    place.image_url = image_url
+                    place.price = price
+                    place.rating = rating
                     place.save()
                     updated_count += 1
                 else:
-                    # Create new place
                     Place.objects.create(
                         name=name,
                         latitude=lat,
@@ -343,6 +355,26 @@ class PlaceListView(generics.ListAPIView):
         except Exception as e:
             print(f"Error fetching/processing OSM data: {e}")
             raise
+
+class PlaceListCreateView(ListCreateAPIView):
+    serializer_class = PlaceSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]  # Allow read to everyone, write to logged-in users
+
+    def get_queryset(self):
+        queryset = Place.objects.all()
+        city = self.request.query_params.get("city")
+        type_ = self.request.query_params.get("type")
+
+        if city:
+            queryset = queryset.filter(city__iexact=city)
+        if type_:
+            queryset = queryset.filter(type__iexact=type_)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        # If you want to track who added the place
+        serializer.save(created_by=self.request.user)
 
 class PlaceDetailView(RetrieveUpdateDestroyAPIView):
     queryset = Place.objects.all()
@@ -366,17 +398,18 @@ class AdminBookingUpdateView(generics.RetrieveUpdateAPIView):
     serializer_class = AdminBookingSerializer
     permission_classes = [permissions.IsAdminUser]
 
+class AdminBookingDeleteView(generics.DestroyAPIView):
+    queryset = Booking.objects.all()
+    serializer_class = AdminBookingSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+
 class UserBookingsListAPIView(generics.ListAPIView):
     serializer_class = BookingSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         return Booking.objects.filter(user=self.request.user).order_by('-booking_date')
-    
-# views.py
-from rest_framework import generics, permissions
-from .models import Booking
-from .serializers import BookingDetailSerializer
 
 class UserBookingDetailAPIView(generics.RetrieveAPIView):
     serializer_class = BookingDetailSerializer
