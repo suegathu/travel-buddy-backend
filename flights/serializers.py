@@ -11,3 +11,5 @@ class FlightBookingSerializer(serializers.ModelSerializer):
     class Meta:
         model = FlightBooking
         fields = '__all__'
+
+        

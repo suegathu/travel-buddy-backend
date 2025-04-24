@@ -12,6 +12,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Flight, FlightBooking
 from .serializers import FlightSerializer, FlightBookingSerializer
+from django.contrib.auth.models import AnonymousUser
+from rest_framework.exceptions import AuthenticationFailed
+import random 
 import os
 from dotenv import load_dotenv
 
@@ -58,18 +61,23 @@ def fetch_flights(request):
     if not data:
         return Response({"error": "No flight data received"}, status=status.HTTP_404_NOT_FOUND)
 
+  
+
+# In the fetch_flights function, change the price generation:
     for flight_data in data:
         flight_number = flight_data.get("flight", {}).get("iata", "")
-        airline = flight_data.get("airline", {}).get("name", "")
+        airline = flight_data.get("airline", {}).get("name") or "Unknown Airline"
         origin = flight_data.get("departure", {}).get("airport", "")
         destination = flight_data.get("arrival", {}).get("airport", "")
         departure_time = flight_data.get("departure", {}).get("estimated", "")
         arrival_time = flight_data.get("arrival", {}).get("estimated", "")
-        available_seats = 100  # Default value since Aviationstack doesn't provide this
-        price = 200.00  # Default price
+        available_seats = 100
+        
+        # Generate a random price between $150 and $800
+        price = round(random.uniform(150.00, 800.00), 2)
 
         if not arrival_time:
-            arrival_time = "1970-01-01T00:00:00Z"  # Default value to prevent NULL error
+            arrival_time = "1970-01-01T00:00:00Z"
 
         if flight_number and origin and destination:
             Flight.objects.get_or_create(
@@ -84,7 +92,6 @@ def fetch_flights(request):
                     "price": price,
                 },
             )
-
     flights = Flight.objects.all()
     serializer = FlightSerializer(flights, many=True)
     return Response(serializer.data)
@@ -92,6 +99,9 @@ def fetch_flights(request):
 # 🎟️ Book a Flight
 @api_view(['POST'])
 def book_flight(request):
+    if not request.user.is_authenticated:  # Check if the user is authenticated
+        raise AuthenticationFailed("You must be logged in to book a flight.")
+
     flight_number = request.data.get("flight_number")
     seat_number = request.data.get("seat_number")
 
@@ -108,7 +118,7 @@ def book_flight(request):
 
     # Create booking
     booking = FlightBooking.objects.create(
-        user=request.user,
+        user=request.user,  # Now we are sure request.user is authenticated
         flight=flight,
         seat_number=seat_number,
         status="pending"
@@ -125,8 +135,6 @@ def book_flight(request):
     qr.save(qr_io, format="PNG")
     booking.qr_code.save(f"{booking.id}.png", ContentFile(qr_io.getvalue()), save=True)
 
-    print(request.user)
-
     # Send Email Confirmation
     send_mail(
         "Your Flight Booking Confirmation",
@@ -138,6 +146,7 @@ def book_flight(request):
 
     serializer = FlightBookingSerializer(booking)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 # ✅ Verify QR Code at the AirportFav
 @api_view(['GET'])
@@ -183,8 +192,9 @@ def get_available_seats(request, flight_number):
 
     print("booked seats", booked_seats)
 
-    # TODO: Remove booked seats
-    available_seats = [seat for seat in range(1, flight.available_seats + 1) if seat not in booked_seats]
+    ALL_SEATS = [f"{i}" for i in range(1, 101)]
+    available_seats = [seat for seat in ALL_SEATS if seat not in booked_seats]
+
 
     return Response({"available_seats": available_seats}, status=status.HTTP_200_OK)
 @api_view(['GET'])
@@ -203,7 +213,7 @@ def get_booking_details(request, booking_id):
 def my_flight_bookings(request):
     bookings = FlightBooking.objects.filter(user=request.user)
     serializer = FlightBookingSerializer(bookings, many=True)
-    return Response(serializer.data)
+    return Response({'results': serializer.data})
 
 @api_view(['PATCH'])  # Ensure PATCH is included
 @permission_classes([IsAuthenticated])
@@ -228,3 +238,215 @@ def cancel_flight_booking(request, booking_id):
 
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from django.utils import timezone
+from django.db.models import Count
+from .models import Flight
+from .serializers import FlightSerializer
+
+class AdminFlightListCreateView(generics.ListCreateAPIView):
+    """
+    List all flights or create a new flight.
+    For admin use only.
+    """
+    queryset = Flight.objects.all().order_by('-departure_time')
+    serializer_class = FlightSerializer
+    permission_classes = [permissions.IsAdminUser]
+    
+    def get_queryset(self):
+        """
+        Optionally filter flights by query parameters
+        """
+        queryset = Flight.objects.all().order_by('-departure_time')
+        airline = self.request.query_params.get('airline')
+        origin = self.request.query_params.get('origin')
+        destination = self.request.query_params.get('destination')
+        flight_number = self.request.query_params.get('flight_number')
+        
+        if airline:
+            queryset = queryset.filter(airline__icontains=airline)
+        if origin:
+            queryset = queryset.filter(origin__icontains=origin)
+        if destination:
+            queryset = queryset.filter(destination__icontains=destination)
+        if flight_number:
+            queryset = queryset.filter(flight_number__icontains=flight_number)
+            
+        return queryset
+
+class AdminFlightRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+    """
+    Retrieve or update a flight.
+    For admin use only.
+    """
+    queryset = Flight.objects.all()
+    serializer_class = FlightSerializer
+    permission_classes = [permissions.IsAdminUser]
+    lookup_field = 'id'
+
+class AdminFlightDeleteView(generics.DestroyAPIView):
+    """
+    Delete a flight.
+    For admin use only.
+    """
+    queryset = Flight.objects.all()
+    serializer_class = FlightSerializer
+    permission_classes = [permissions.IsAdminUser]
+    lookup_field = 'id'
+
+class AdminFlightStatsView(generics.GenericAPIView):
+    """
+    Retrieve statistics about flights.
+    For admin use only.
+    """
+    permission_classes = [permissions.IsAdminUser]
+    
+    def get(self, request, *args, **kwargs):
+        total_flights = Flight.objects.count()
+        upcoming_flights = Flight.objects.filter(departure_time__gt=timezone.now()).count()
+        
+        # Get airlines and their flight counts - using flight_number instead of id
+        airline_stats = Flight.objects.values('airline').annotate(count=Count('flight_number')).order_by('-count')
+        
+        # Get most popular routes - using flight_number instead of id
+        routes = Flight.objects.values('origin', 'destination').annotate(count=Count('flight_number')).order_by('-count')[:5]
+        
+        return Response({
+            'total_flights': total_flights,
+            'upcoming_flights': upcoming_flights,
+            'airline_stats': airline_stats,
+            'popular_routes': routes
+        })
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from rest_framework.decorators import api_view, permission_classes
+from django.shortcuts import get_object_or_404
+from .models import FlightBooking, Flight
+from .serializers import FlightBookingSerializer
+import logging
+
+logger = logging.getLogger(__name__)
+
+class AdminFlightBookingListView(generics.ListAPIView):
+    """
+    List all flight bookings
+    For admin use only.
+    """
+    permission_classes = [permissions.IsAdminUser]
+    serializer_class = FlightBookingSerializer
+    
+    def get_queryset(self):
+        """
+        Optionally filter flight bookings by query parameters
+        """
+        queryset = FlightBooking.objects.all().order_by('-created_at')
+        status = self.request.query_params.get('status')
+        flight_number = self.request.query_params.get('flight_number')
+        user_id = self.request.query_params.get('user_id')
+        
+        if status:
+            queryset = queryset.filter(status=status)
+        if flight_number:
+            queryset = queryset.filter(flight__flight_number=flight_number)
+        if user_id:
+            queryset = queryset.filter(user__id=user_id)
+            
+        return queryset
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        
+        # Enhance the response with additional flight details
+        results = []
+        for booking_data in serializer.data:
+            booking = queryset.get(id=booking_data['id'])
+            
+            # Add flight details to the booking data
+            enhanced_booking = {
+                **booking_data,
+                'user_name': booking.user.username,
+                'flight_number': booking.flight.flight_number,
+                'flight_airline': booking.flight.airline,
+                'flight_origin': booking.flight.origin,
+                'flight_destination': booking.flight.destination,
+                'departure_time': booking.flight.departure_time,
+                'arrival_time': booking.flight.arrival_time,
+                'flight_price': str(booking.flight.price)
+            }
+            results.append(enhanced_booking)
+        
+        return Response({'results': results})
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAdminUser])
+def admin_update_flight_booking(request, booking_id):
+    """
+    Update the status of a flight booking
+    For admin use only.
+    """
+    booking = get_object_or_404(FlightBooking, id=booking_id)
+    
+    # Only update specific fields
+    if 'status' in request.data:
+        booking.status = request.data['status']
+        booking.save()
+    
+    serializer = FlightBookingSerializer(booking)
+    return Response(serializer.data)
+
+@api_view(['PATCH'])
+@permission_classes([permissions.IsAdminUser])
+def admin_cancel_flight_booking(request, booking_id):
+    """
+    Cancel a flight booking
+    For admin use only.
+    """
+    try:
+        booking = get_object_or_404(FlightBooking, id=booking_id)
+        
+        # Increment available seats when cancelling a booking
+        if booking.status != 'cancelled':
+            flight = booking.flight
+            flight.available_seats += 1
+            flight.save()
+        
+        booking.status = 'cancelled'
+        booking.save()
+        
+        serializer = FlightBookingSerializer(booking)
+        return Response({"message": "Booking cancelled successfully", "booking": serializer.data})
+    
+    except Exception as e:
+        logger.error(f"Error cancelling booking {booking_id}: {str(e)}")
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AdminFlightBookingStatsView(generics.GenericAPIView):
+    """
+    Retrieve statistics about flight bookings
+    For admin use only.
+    """
+    permission_classes = [permissions.IsAdminUser]
+    
+    def get(self, request, *args, **kwargs):
+        total_bookings = FlightBooking.objects.count()
+        confirmed_bookings = FlightBooking.objects.filter(status='confirmed').count()
+        pending_bookings = FlightBooking.objects.filter(status='pending').count()
+        checked_in_bookings = FlightBooking.objects.filter(status='checked_in').count()
+        cancelled_bookings = FlightBooking.objects.filter(status='cancelled').count()
+        
+        # Calculate total revenue from confirmed bookings
+        total_revenue = 0
+        for booking in FlightBooking.objects.filter(status__in=['confirmed', 'checked_in']):
+            total_revenue += booking.flight.price
+        
+        return Response({
+            'total_bookings': total_bookings,
+            'confirmed_bookings': confirmed_bookings,
+            'pending_bookings': pending_bookings,
+            'checked_in_bookings': checked_in_bookings,
+            'cancelled_bookings': cancelled_bookings,
+            'total_revenue': total_revenue
+        })    

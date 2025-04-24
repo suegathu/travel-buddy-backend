@@ -28,7 +28,10 @@ PEXELS_API_KEY = os.getenv('PEXELS_API_KEY')
 
 CACHE_EXPIRY_DAYS = 7
 
-# Updated default restaurant images dictionary with working URLs
+# Default image for consistent fallback
+DEFAULT_PLACE_IMAGE = 'https://placehold.co/300x200?text=No+Image'
+
+# Updated default restaurant images dictionary with verified working URLs
 DEFAULT_PLACE_IMAGES = {
     'hotel': [
         "https://images.pexels.com/photos/2507010/pexels-photo-2507010.jpeg",
@@ -41,6 +44,11 @@ DEFAULT_PLACE_IMAGES = {
         "https://images.pexels.com/photos/941861/pexels-photo-941861.jpeg",
         "https://images.pexels.com/photos/1307698/pexels-photo-1307698.jpeg",
         "https://images.pexels.com/photos/696218/pexels-photo-696218.jpeg",
+        # Additional verified restaurant images
+        "https://images.pexels.com/photos/262978/pexels-photo-262978.jpeg",
+        "https://images.pexels.com/photos/958545/pexels-photo-958545.jpeg",
+        "https://images.pexels.com/photos/6267/menu-restaurant-vintage-table.jpg",
+        "https://images.pexels.com/photos/5317/food-salad-restaurant-person.jpg",
     ],
     'attraction': [
         "https://images.pexels.com/photos/1619317/pexels-photo-1619317.jpeg",
@@ -101,7 +109,7 @@ def generate_random_rating():
 def get_image_url(query, category='travel'):
     """Get an image URL from Pexels API with fallback options."""
     # First check if we have default images for this category
-    if category in DEFAULT_PLACE_IMAGES:
+    if category in DEFAULT_PLACE_IMAGES and DEFAULT_PLACE_IMAGES[category]:
         return random.choice(DEFAULT_PLACE_IMAGES[category])
     
     # Try Pexels API for other categories
@@ -110,33 +118,56 @@ def get_image_url(query, category='travel'):
     print(f"📸 Querying Pexels for: {query} | Category: {category}")
 
     try:
-        res = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params)
+        res = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params, timeout=5)
+        if res.status_code != 200:
+            print(f"⚠️ Pexels API returned status code {res.status_code}")
+            # If category has default images, use those; otherwise use the default image
+            if category in DEFAULT_PLACE_IMAGES and DEFAULT_PLACE_IMAGES[category]:
+                return random.choice(DEFAULT_PLACE_IMAGES[category])
+            return DEFAULT_PLACE_IMAGE
+            
         data = res.json()
         if data.get('photos'):
             return data['photos'][0]['src']['medium']
+        else:
+            print(f"⚠️ No photos found for query: {query}")
     except Exception as e:
         print(f"⚠️ Primary Pexels error: {e}")
 
-    # Fallback options if primary search fails
+    # Improved fallback options if primary search fails
     fallback_keywords = {
-        'hotel': ['luxury hotel', 'resort', 'hotel room'],
-        'restaurant': ['restaurant interior', 'fine dining', 'cafe exterior'],
-        'attraction': ['landmark', 'tourist attraction', 'monument'],
+        'hotel': ['luxury hotel', 'resort', 'hotel room', 'accommodation'],
+        'restaurant': ['dining', 'cafe', 'food', 'eatery', 'bistro', 'restaurant interior', 'dining room'],
+        'attraction': ['landmark', 'tourist attraction', 'monument', 'sightseeing'],
         'travel': ['adventure', 'vacation', 'scenic view']
     }
 
+    # Use more specific category-related fallback terms
     fallback_query = random.choice(fallback_keywords.get(category, ['travel']))
+    print(f"🔄 Trying fallback query: {fallback_query}")
 
     try:
-        res = requests.get("https://api.pexels.com/v1/search", headers=headers, params={"query": fallback_query, "per_page": 1})
+        res = requests.get("https://api.pexels.com/v1/search", headers=headers, params={"query": fallback_query, "per_page": 1}, timeout=5)
+        if res.status_code != 200:
+            print(f"⚠️ Fallback Pexels API returned status code {res.status_code}")
+            if category in DEFAULT_PLACE_IMAGES and DEFAULT_PLACE_IMAGES[category]:
+                return random.choice(DEFAULT_PLACE_IMAGES[category])
+            return DEFAULT_PLACE_IMAGE
+            
         fallback_data = res.json()
         if fallback_data.get('photos'):
             return fallback_data['photos'][0]['src']['medium']
+        else:
+            print(f"⚠️ No photos found for fallback query: {fallback_query}")
     except Exception as e:
         print(f"⚠️ Fallback Pexels error: {e}")
 
-    # Last resort placeholder
-    return 'https://via.placeholder.com/300x200?text=No+Image+Available'
+    # If category has default images, use those as last resort
+    if category in DEFAULT_PLACE_IMAGES and DEFAULT_PLACE_IMAGES[category]:
+        return random.choice(DEFAULT_PLACE_IMAGES[category])
+    
+    # Last resort placeholder - using a more reliable placeholder service
+    return f'https://placehold.co/300x200?text={category.capitalize()}+Image'
 
 def get_city_bbox_from_nominatim(city_name):
     """Get bounding box coordinates for a city using Nominatim."""
@@ -239,7 +270,11 @@ class PlaceListView(generics.ListAPIView):
                 place.rating = generate_random_rating()
                 updated = True
             if place.image_url is None or place.image_url == "":
-                place.image_url = get_image_url(f"{place.name} {place.place_type}", place.place_type)
+                # Special handling for restaurants to ensure they have images
+                if place.place_type == 'restaurant' and 'restaurant' in DEFAULT_PLACE_IMAGES:
+                    place.image_url = random.choice(DEFAULT_PLACE_IMAGES['restaurant'])
+                else:
+                    place.image_url = get_image_url(f"{place.name} {place.place_type}", place.place_type)
                 updated = True
             if updated:
                 place.save()
@@ -319,7 +354,12 @@ class PlaceListView(generics.ListAPIView):
                     longitude__range=(lon - 0.0001, lon + 0.0001)
                 )
 
-                image_url = get_image_url(f"{name} {place_type}", place_type)
+                # For restaurants, always use our verified restaurant images
+                if place_type == 'restaurant' and 'restaurant' in DEFAULT_PLACE_IMAGES:
+                    image_url = random.choice(DEFAULT_PLACE_IMAGES['restaurant'])
+                else:
+                    image_url = get_image_url(f"{name} {place_type}", place_type)
+                    
                 price = generate_random_price(place_type)
                 rating = generate_random_rating()
 
