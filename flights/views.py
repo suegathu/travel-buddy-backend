@@ -15,6 +15,7 @@ from .serializers import FlightSerializer, FlightBookingSerializer
 from django.contrib.auth.models import AnonymousUser
 from rest_framework.exceptions import AuthenticationFailed
 import random 
+from rest_framework import permissions
 import os
 from dotenv import load_dotenv
 
@@ -25,7 +26,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Aviationstack API key
-AVIATIONSTACK_API_KEY = os.getenv("AVIATIONSTACK_API_KEY")
+AVIATIONSTACK_API_KEY = os.getenv('AVIATIONSTACK_API_KEY')
 API_URL = "http://api.aviationstack.com/v1/flights"
 
 # ✈️ List All Flights
@@ -43,9 +44,6 @@ def fetch_flights(request):
     response = requests.get(API_URL, params={
         # 'flight_status': 'scheduled',
         'access_key': AVIATIONSTACK_API_KEY,
-        # Whoops, you can't filter by date on the free plan
-        # TODO: Fetch as many results as possibe using the limit param and then manually filter by date?
-        # 'flight_date': request.query_params.get('flight_date'), # YYYY-MM-DD
         'dep_iata': request.query_params.get('dep_iata'),
         'arr_iata': request.query_params.get('arr_iata'),
     })
@@ -56,14 +54,10 @@ def fetch_flights(request):
 
     data = response.json().get("data", [])
 
-    print(data)
-
     if not data:
         return Response({"error": "No flight data received"}, status=status.HTTP_404_NOT_FOUND)
 
-  
-
-# In the fetch_flights function, change the price generation:
+    # Process each flight from the API
     for flight_data in data:
         flight_number = flight_data.get("flight", {}).get("iata", "")
         airline = flight_data.get("airline", {}).get("name") or "Unknown Airline"
@@ -80,7 +74,8 @@ def fetch_flights(request):
             arrival_time = "1970-01-01T00:00:00Z"
 
         if flight_number and origin and destination:
-            Flight.objects.get_or_create(
+            # Use update_or_create instead of get_or_create to ensure price updates on existing records
+            flight, created = Flight.objects.update_or_create(
                 flight_number=flight_number,
                 defaults={
                     "airline": airline,
@@ -92,6 +87,10 @@ def fetch_flights(request):
                     "price": price,
                 },
             )
+            
+            # Debug log to confirm price was set correctly
+            logger.debug(f"Flight {flight_number} {'created' if created else 'updated'} with price: {price}")
+
     flights = Flight.objects.all()
     serializer = FlightSerializer(flights, many=True)
     return Response(serializer.data)
@@ -215,29 +214,82 @@ def my_flight_bookings(request):
     serializer = FlightBookingSerializer(bookings, many=True)
     return Response({'results': serializer.data})
 
-@api_view(['PATCH'])  # Ensure PATCH is included
-@permission_classes([IsAuthenticated])
-def cancel_flight_booking(request, booking_id):
-    print(f"DEBUG: Reached cancel view for {booking_id}, user: {request.user}")
+@api_view(['DELETE'])
+@permission_classes([permissions.IsAdminUser])
+def admin_cancel_flight_booking(request, booking_id):
+    """
+    Delete a flight booking
+    For admin use only.
+    """
     try:
-        # Get the booking object
-        booking = FlightBooking.objects.get(id=booking_id, user=request.user)
-
-        # Update the booking status to 'canceled'
-        booking.status = 'canceled'
-        booking.save()
-
-        # Serialize the booking data to return in the response
-        serializer = FlightBookingSerializer(booking)
-
-        return Response({"message": "Booking canceled successfully", "booking": serializer.data}, status=status.HTTP_200_OK)
-
-    except FlightBooking.DoesNotExist:
-        return Response({"error": "Booking not found or you don't have permission to cancel this booking."},
-                        status=status.HTTP_404_NOT_FOUND)
-
+        booking = get_object_or_404(FlightBooking, id=booking_id)
+        
+        # Increment available seats when deleting a booking
+        flight = booking.flight
+        flight.available_seats += 1
+        flight.save()
+        
+        # Store booking details for response
+        booking_data = FlightBookingSerializer(booking).data
+        
+        # Delete the booking
+        booking.delete()
+        
+        return Response({
+            "message": "Booking deleted successfully", 
+            "booking": booking_data
+        })
+    
     except Exception as e:
+        logger.error(f"Error deleting booking {booking_id}: {str(e)}")
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+@api_view(['GET'])
+@renderer_classes([JSONRenderer])  # ✅ Ensure JSON response
+def get_flight_details(request, flight_number):
+    flight = get_object_or_404(Flight, flight_number=flight_number)
+    
+    # Get bookings for this flight to show seat reservations
+    bookings = FlightBooking.objects.filter(flight=flight)
+    seat_reservations = {}
+    
+    for booking in bookings:
+        if booking.seat_number:
+            # Get user information
+            user_name = "Unknown"
+            if booking.user:
+                user_name = booking.user.get_full_name() or booking.user.username
+            
+            seat_reservations[booking.seat_number] = {
+                'user': user_name,
+                'status': booking.status,
+                'booking_id': booking.id
+            }
+    
+    # Get all booked seats as a list
+    booked_seats = list(bookings.values_list('seat_number', flat=True))
+    
+    # Calculate available seats
+    ALL_SEATS = [f"{i}" for i in range(1, 101)]
+    available_seats = [seat for seat in ALL_SEATS if seat not in booked_seats]
+    
+    # Create response with both flight details and seat information
+    response_data = {
+        "flight_details": {
+            "flight_number": flight.flight_number,
+            "airline": flight.airline,
+            "origin": flight.origin,
+            "destination": flight.destination,
+            "departure_time": flight.departure_time,
+            "arrival_time": flight.arrival_time,
+            "price": str(flight.price),
+            "total_seats": 100,
+            "available_seats_count": len(available_seats)
+        },
+        "available_seats": available_seats,
+        "seat_reservations": seat_reservations
+    }
+    
+    return Response(response_data, status=status.HTTP_200_OK)    
 
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -356,29 +408,11 @@ class AdminFlightBookingListView(generics.ListAPIView):
         return queryset
     
     def list(self, request, *args, **kwargs):
+        # Use the serializer directly and let it handle all the field mappings
+        # This avoids manual field population that could cause inconsistencies
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
-        
-        # Enhance the response with additional flight details
-        results = []
-        for booking_data in serializer.data:
-            booking = queryset.get(id=booking_data['id'])
-            
-            # Add flight details to the booking data
-            enhanced_booking = {
-                **booking_data,
-                'user_name': booking.user.username,
-                'flight_number': booking.flight.flight_number,
-                'flight_airline': booking.flight.airline,
-                'flight_origin': booking.flight.origin,
-                'flight_destination': booking.flight.destination,
-                'departure_time': booking.flight.departure_time,
-                'arrival_time': booking.flight.arrival_time,
-                'flight_price': str(booking.flight.price)
-            }
-            results.append(enhanced_booking)
-        
-        return Response({'results': results})
+        return Response(serializer.data)
 
 @api_view(['PATCH'])
 @permission_classes([permissions.IsAdminUser])
@@ -397,30 +431,28 @@ def admin_update_flight_booking(request, booking_id):
     serializer = FlightBookingSerializer(booking)
     return Response(serializer.data)
 
-@api_view(['PATCH'])
-@permission_classes([permissions.IsAdminUser])
-def admin_cancel_flight_booking(request, booking_id):
-    """
-    Cancel a flight booking
-    For admin use only.
-    """
+@api_view(['PATCH'])  # Ensure PATCH is included
+@permission_classes([IsAuthenticated])
+def cancel_flight_booking(request, booking_id):
+    print(f"DEBUG: Reached cancel view for {booking_id}, user: {request.user}")
     try:
-        booking = get_object_or_404(FlightBooking, id=booking_id)
-        
-        # Increment available seats when cancelling a booking
-        if booking.status != 'cancelled':
-            flight = booking.flight
-            flight.available_seats += 1
-            flight.save()
-        
-        booking.status = 'cancelled'
+        # Get the booking object
+        booking = FlightBooking.objects.get(id=booking_id, user=request.user)
+
+        # Update the booking status to 'canceled'
+        booking.status = 'canceled'
         booking.save()
-        
+
+        # Serialize the booking data to return in the response
         serializer = FlightBookingSerializer(booking)
-        return Response({"message": "Booking cancelled successfully", "booking": serializer.data})
-    
+
+        return Response({"message": "Booking canceled successfully", "booking": serializer.data}, status=status.HTTP_200_OK)
+
+    except FlightBooking.DoesNotExist:
+        return Response({"error": "Booking not found or you don't have permission to cancel this booking."},
+                        status=status.HTTP_404_NOT_FOUND)
+
     except Exception as e:
-        logger.error(f"Error cancelling booking {booking_id}: {str(e)}")
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class AdminFlightBookingStatsView(generics.GenericAPIView):

@@ -44,9 +44,9 @@ urlpatterns = [
     path('admin/flight-stats/', AdminFlightStatsView.as_view(), name='admin-flight-stats'),
 
     # === Admin flight bookings management ===
-    path('admin/flight-bookings/', AdminFlightBookingListView.as_view(), name='admin-flight-bookings'),
-    path('admin/flight-bookings/<uuid:booking_id>/', admin_update_flight_booking, name='admin-update-flight-booking'),
-    path('admin/flight-bookings/<uuid:booking_id>/cancel/', admin_cancel_flight_booking, name='admin-cancel-flight-booking'),
-    path('admin/flight-booking-stats/', AdminFlightBookingStatsView.as_view(), name='admin-flight-booking-stats'),
+    path('admin/bookings/', AdminFlightBookingListView.as_view(), name='admin-flight-bookings'),
+    path('admin/bookings/<uuid:booking_id>/update/', admin_update_flight_booking, name='admin-update-flight-booking'),
+    path('admin/bookings/<uuid:booking_id>/delete/', admin_cancel_flight_booking, name='admin-cancel-flight-booking'),
+    path('admin/booking-stats/', AdminFlightBookingStatsView.as_view(), name='admin-flight-booking-stats'),
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
