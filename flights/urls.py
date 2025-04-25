@@ -9,6 +9,7 @@ from .views import (
     get_booking_details,
     my_flight_bookings,
     cancel_flight_booking,
+    download_booking_pdf,
 
     # Admin views
     AdminFlightDeleteView,
@@ -36,6 +37,7 @@ urlpatterns = [
     path('get-booking-details/<uuid:booking_id>/', get_booking_details, name='get-booking-details'),
     path('my-flight-bookings/', my_flight_bookings, name='my-flight-bookings'),
     path('cancel-flight-booking/<uuid:booking_id>/', cancel_flight_booking, name='cancel-flight-booking'),
+    path('bookings/<str:booking_id>/download/', download_booking_pdf, name='download-booking-pdf'),
 
     # === Admin flight management ===
     path('admin/flights/', AdminFlightListCreateView.as_view(), name='admin-flight-list-create'),

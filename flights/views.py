@@ -482,3 +482,73 @@ class AdminFlightBookingStatsView(generics.GenericAPIView):
             'cancelled_bookings': cancelled_bookings,
             'total_revenue': total_revenue
         })    
+    
+from rest_framework.renderers import BaseRenderer
+from rest_framework.decorators import api_view, permission_classes, renderer_classes
+from rest_framework.permissions import IsAuthenticated
+from django.http import HttpResponse
+from uuid import UUID
+from django.shortcuts import get_object_or_404
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+from django.conf import settings
+import os
+
+# Custom renderer for PDF content
+class PDFRenderer(BaseRenderer):
+    media_type = 'application/pdf'
+    format = 'pdf'
+    
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return data
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@renderer_classes([PDFRenderer])
+def download_booking_pdf(request, booking_id):
+    try:
+        # Try to convert to UUID if it's in UUID format
+        if '-' in booking_id:
+            booking_id = UUID(booking_id)
+    except ValueError:
+        pass  # If conversion fails, use the original string value
+            
+    booking = get_object_or_404(FlightBooking, id=booking_id, user=request.user)
+    
+    # Create the HTTP response
+    response = HttpResponse(content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="booking_{booking_id}.pdf"'
+    
+    # Create PDF canvas
+    p = canvas.Canvas(response)
+    p.setFont("Helvetica", 14)
+    
+    # Add content to PDF
+    p.drawString(100, 800, f"Flight Booking Confirmation")
+    p.drawString(100, 770, f"Booking ID: {booking.id}")
+    p.drawString(100, 750, f"Flight Number: {booking.flight.flight_number}")
+    p.drawString(100, 730, f"Passenger: {booking.user.get_full_name() or booking.user.username}")
+    p.drawString(100, 710, f"Seat Number: {booking.seat_number}")
+    p.drawString(100, 690, f"Status: {booking.status}")
+    p.drawString(100, 670, f"Departure: {booking.flight.origin}")
+    p.drawString(100, 650, f"Arrival: {booking.flight.destination}")
+    p.drawString(100, 630, f"Departure Time: {booking.flight.departure_time}")
+    p.drawString(100, 610, f"Arrival Time: {booking.flight.arrival_time}")
+    
+    # Add QR code if available
+    if booking.qr_code:
+        p.drawString(100, 550, "QR Code for Check-in:")
+        
+        # Get the absolute file path from the media field
+        qr_path = booking.qr_code.path
+        
+        # Check if file exists
+        if os.path.exists(qr_path):
+            p.drawImage(qr_path, 100, 400, width=2*inch, height=2*inch)
+        else:
+            p.drawString(100, 530, "QR Code not available")
+    
+    p.showPage()
+    p.save()
+    
+    return response
