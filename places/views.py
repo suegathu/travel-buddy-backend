@@ -396,24 +396,32 @@ class PlaceListView(generics.ListAPIView):
             print(f"Error fetching/processing OSM data: {e}")
             raise
 
+from rest_framework.generics import ListCreateAPIView
+from rest_framework.permissions import IsAdminUser
+from .models import Place
+from .serializers import PlaceSerializer
+
 class PlaceListCreateView(ListCreateAPIView):
     serializer_class = PlaceSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]  # Allow read to everyone, write to logged-in users
-
+    permission_classes = [IsAdminUser]  
+    
     def get_queryset(self):
         queryset = Place.objects.all()
         city = self.request.query_params.get("city")
         type_ = self.request.query_params.get("type")
-
+        local_only = self.request.query_params.get("local_only") == "true"
+        
         if city:
             queryset = queryset.filter(city__iexact=city)
         if type_:
             queryset = queryset.filter(type__iexact=type_)
-
+        if local_only:
+            queryset = queryset.filter(osm_id__isnull=True)  
+            
         return queryset
-
+    
     def perform_create(self, serializer):
-        # If you want to track who added the place
+        # Track who added the place
         serializer.save(created_by=self.request.user)
 
 class PlaceDetailView(RetrieveUpdateDestroyAPIView):

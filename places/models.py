@@ -24,6 +24,12 @@ class Place(models.Model):
     latitude = models.FloatField(default=0.0)
     longitude = models.FloatField(default=0.0)
     last_updated = models.DateTimeField(default=timezone.now)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        default=1 
+    )
     
     def __str__(self):
         return self.name

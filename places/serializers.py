@@ -11,7 +11,8 @@ class PlaceSerializer(serializers.ModelSerializer):
 
 class BookingSerializer(serializers.ModelSerializer):
     place_name = serializers.CharField(source='place.name', read_only=True)
-    location = serializers.CharField(source='place.location', read_only=True)  # Make sure location is added
+    location = serializers.CharField(source='place.location', read_only=True)  
+    place_type = serializers.CharField(source='place.place_type', read_only=True)
 
     class Meta:
         model = Booking

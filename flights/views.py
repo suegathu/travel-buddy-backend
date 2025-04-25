@@ -26,7 +26,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # Aviationstack API key
-AVIATIONSTACK_API_KEY = os.getenv('AVIATIONSTACK_API_KEY')
+AVIATIONSTACK_API_KEY = "e2bc6001f3af7d9753df1be7743dd828"
 API_URL = "http://api.aviationstack.com/v1/flights"
 
 # ✈️ List All Flights
