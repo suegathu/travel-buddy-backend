@@ -28,7 +28,13 @@ SECRET_KEY = 'django-insecure-mv3tryqkl+=ejl4xz9yv_3xk46x5a1)s_0(*f_%tiwpx)q+2=0
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'travel-buddy-7g6f.onrender.com', 
+    'localhost', '127.0.0.1', 
+    "https://travel-buddy-frontend-xi.vercel.app",
+    'http://localhost:5173'
+    ]
+
 
 
 # Application definition
