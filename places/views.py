@@ -29,41 +29,7 @@ PEXELS_API_KEY = os.getenv('PEXELS_API_KEY')
 CACHE_EXPIRY_DAYS = 7
 
 # Default image for consistent fallback
-DEFAULT_PLACE_IMAGE = 'https://placehold.co/300x200?text=No+Image'
-
-# Updated default restaurant images dictionary with verified working URLs
-DEFAULT_PLACE_IMAGES = {
-    'hotel': [
-        "https://images.pexels.com/photos/2507010/pexels-photo-2507010.jpeg",
-        "https://images.pexels.com/photos/2096983/pexels-photo-2096983.jpeg",
-        "https://images.pexels.com/photos/1838554/pexels-photo-1838554.jpeg",
-    ],
-    'restaurant': [
-        "https://images.pexels.com/photos/67468/pexels-photo-67468.jpeg",
-        "https://images.pexels.com/photos/260922/pexels-photo-260922.jpeg",
-        "https://images.pexels.com/photos/941861/pexels-photo-941861.jpeg",
-        "https://images.pexels.com/photos/1307698/pexels-photo-1307698.jpeg",
-        "https://images.pexels.com/photos/696218/pexels-photo-696218.jpeg",
-        # Additional verified restaurant images
-        "https://images.pexels.com/photos/262978/pexels-photo-262978.jpeg",
-        "https://images.pexels.com/photos/958545/pexels-photo-958545.jpeg",
-        "https://images.pexels.com/photos/6267/menu-restaurant-vintage-table.jpg",
-        "https://images.pexels.com/photos/5317/food-salad-restaurant-person.jpg",
-    ],
-    'attraction': [
-        "https://images.pexels.com/photos/1619317/pexels-photo-1619317.jpeg",
-        "https://images.pexels.com/photos/451441/pexels-photo-451441.jpeg",
-        "https://images.pexels.com/photos/1171386/pexels-photo-1171386.jpeg",
-    ],
-    'italian': [
-        "https://images.pexels.com/photos/1566837/pexels-photo-1566837.jpeg",
-        "https://images.pexels.com/photos/1527603/pexels-photo-1527603.jpeg"
-    ],
-    'seafood': [
-        "https://images.pexels.com/photos/262978/pexels-photo-262978.jpeg",
-        "https://images.pexels.com/photos/566345/pexels-photo-566345.jpeg"
-    ]
-}
+DEFAULT_PLACE_IMAGE = 'https://images.pexels.com/photos/6267/menu-restaurant-vintage-table.jpg'
 
 # Category tags for OSM queries
 CATEGORY_TAGS = {
@@ -108,11 +74,7 @@ def generate_random_rating():
 
 def get_image_url(query, category='travel'):
     """Get an image URL from Pexels API with fallback options."""
-    # First check if we have default images for this category
-    if category in DEFAULT_PLACE_IMAGES and DEFAULT_PLACE_IMAGES[category]:
-        return random.choice(DEFAULT_PLACE_IMAGES[category])
-    
-    # Try Pexels API for other categories
+    # Try Pexels API for category
     headers = {"Authorization": PEXELS_API_KEY}
     params = {"query": query, "per_page": 1}
     print(f"📸 Querying Pexels for: {query} | Category: {category}")
@@ -121,9 +83,6 @@ def get_image_url(query, category='travel'):
         res = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params, timeout=5)
         if res.status_code != 200:
             print(f"⚠️ Pexels API returned status code {res.status_code}")
-            # If category has default images, use those; otherwise use the default image
-            if category in DEFAULT_PLACE_IMAGES and DEFAULT_PLACE_IMAGES[category]:
-                return random.choice(DEFAULT_PLACE_IMAGES[category])
             return DEFAULT_PLACE_IMAGE
             
         data = res.json()
@@ -150,8 +109,6 @@ def get_image_url(query, category='travel'):
         res = requests.get("https://api.pexels.com/v1/search", headers=headers, params={"query": fallback_query, "per_page": 1}, timeout=5)
         if res.status_code != 200:
             print(f"⚠️ Fallback Pexels API returned status code {res.status_code}")
-            if category in DEFAULT_PLACE_IMAGES and DEFAULT_PLACE_IMAGES[category]:
-                return random.choice(DEFAULT_PLACE_IMAGES[category])
             return DEFAULT_PLACE_IMAGE
             
         fallback_data = res.json()
@@ -161,13 +118,9 @@ def get_image_url(query, category='travel'):
             print(f"⚠️ No photos found for fallback query: {fallback_query}")
     except Exception as e:
         print(f"⚠️ Fallback Pexels error: {e}")
-
-    # If category has default images, use those as last resort
-    if category in DEFAULT_PLACE_IMAGES and DEFAULT_PLACE_IMAGES[category]:
-        return random.choice(DEFAULT_PLACE_IMAGES[category])
     
-    # Last resort placeholder - using a more reliable placeholder service
-    return f'https://placehold.co/300x200?text={category.capitalize()}+Image'
+    # Last resort placeholder
+    return DEFAULT_PLACE_IMAGE
 
 def get_city_bbox_from_nominatim(city_name):
     """Get bounding box coordinates for a city using Nominatim."""
@@ -270,11 +223,13 @@ class PlaceListView(generics.ListAPIView):
                 place.rating = generate_random_rating()
                 updated = True
             if place.image_url is None or place.image_url == "":
-                # Special handling for restaurants to ensure they have images
-                if place.place_type == 'restaurant' and 'restaurant' in DEFAULT_PLACE_IMAGES:
-                    place.image_url = random.choice(DEFAULT_PLACE_IMAGES['restaurant'])
+                # Use the same image fetching logic as in the first file
+                if place.place_type == 'restaurant':
+                    cuisine = getattr(place, 'cuisine', 'food')
+                    search_term = f"{cuisine} restaurant food"
                 else:
-                    place.image_url = get_image_url(f"{place.name} {place.place_type}", place.place_type)
+                    search_term = f"{place.name} {place.place_type}"
+                place.image_url = get_image_url(search_term, place.place_type)
                 updated = True
             if updated:
                 place.save()
@@ -354,11 +309,9 @@ class PlaceListView(generics.ListAPIView):
                     longitude__range=(lon - 0.0001, lon + 0.0001)
                 )
 
-                # For restaurants, always use our verified restaurant images
-                if place_type == 'restaurant' and 'restaurant' in DEFAULT_PLACE_IMAGES:
-                    image_url = random.choice(DEFAULT_PLACE_IMAGES['restaurant'])
-                else:
-                    image_url = get_image_url(f"{name} {place_type}", place_type)
+                cuisine = tags.get("cuisine", "food")
+                search_term = f"{name} {cuisine} {place_type}"
+                image_url = get_image_url(search_term, place_type)
                     
                 price = generate_random_price(place_type)
                 rating = generate_random_rating()
@@ -395,11 +348,6 @@ class PlaceListView(generics.ListAPIView):
         except Exception as e:
             print(f"Error fetching/processing OSM data: {e}")
             raise
-
-from rest_framework.generics import ListCreateAPIView
-from rest_framework.permissions import IsAdminUser
-from .models import Place
-from .serializers import PlaceSerializer
 
 class PlaceListCreateView(ListCreateAPIView):
     serializer_class = PlaceSerializer
@@ -450,7 +398,6 @@ class AdminBookingDeleteView(generics.DestroyAPIView):
     queryset = Booking.objects.all()
     serializer_class = AdminBookingSerializer
     permission_classes = [permissions.IsAdminUser]
-
 
 class UserBookingsListAPIView(generics.ListAPIView):
     serializer_class = BookingSerializer
