@@ -79,45 +79,50 @@ def get_image_url(query, category='travel'):
     params = {"query": query, "per_page": 1}
     print(f"📸 Querying Pexels for: {query} | Category: {category}")
 
+    # First, check if we should use default image to reduce API calls
+    if not PEXELS_API_KEY or random.random() < 0.2:  # 20% chance to use default to reduce API load
+        return DEFAULT_PLACE_IMAGE
+
     try:
-        res = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params, timeout=5)
-        if res.status_code != 200:
-            print(f"⚠️ Pexels API returned status code {res.status_code}")
-            return DEFAULT_PLACE_IMAGE
-            
-        data = res.json()
-        if data.get('photos'):
-            return data['photos'][0]['src']['medium']
-        else:
+        res = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params, timeout=3)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get('photos'):
+                return data['photos'][0]['src']['medium']
             print(f"⚠️ No photos found for query: {query}")
+        else:
+            print(f"⚠️ Pexels API returned status code {res.status_code}")
+    except requests.exceptions.Timeout:
+        print(f"⚠️ Pexels API timeout for query: {query}")
+        return DEFAULT_PLACE_IMAGE
     except Exception as e:
         print(f"⚠️ Primary Pexels error: {e}")
+        return DEFAULT_PLACE_IMAGE  # Return default immediately on any error
 
-    # Improved fallback options if primary search fails
+    # Use simpler fallback approach to reduce API calls
     fallback_keywords = {
-        'hotel': ['luxury hotel', 'resort', 'hotel room', 'accommodation'],
-        'restaurant': ['dining', 'cafe', 'food', 'eatery', 'bistro', 'restaurant interior', 'dining room'],
-        'attraction': ['landmark', 'tourist attraction', 'monument', 'sightseeing'],
-        'travel': ['adventure', 'vacation', 'scenic view']
+        'hotel': ['luxury hotel', 'hotel room'],
+        'restaurant': ['restaurant', 'dining'],
+        'attraction': ['attraction', 'landmark'],
+        'travel': ['travel', 'vacation']
     }
-
-    # Use more specific category-related fallback terms
-    fallback_query = random.choice(fallback_keywords.get(category, ['travel']))
-    print(f"🔄 Trying fallback query: {fallback_query}")
-
+    
+    # Only try one fallback with short timeout
     try:
-        res = requests.get("https://api.pexels.com/v1/search", headers=headers, params={"query": fallback_query, "per_page": 1}, timeout=5)
-        if res.status_code != 200:
-            print(f"⚠️ Fallback Pexels API returned status code {res.status_code}")
-            return DEFAULT_PLACE_IMAGE
-            
-        fallback_data = res.json()
-        if fallback_data.get('photos'):
-            return fallback_data['photos'][0]['src']['medium']
-        else:
-            print(f"⚠️ No photos found for fallback query: {fallback_query}")
-    except Exception as e:
-        print(f"⚠️ Fallback Pexels error: {e}")
+        fallback_query = random.choice(fallback_keywords.get(category, ['travel']))
+        print(f"🔄 Trying fallback query: {fallback_query}")
+        
+        res = requests.get("https://api.pexels.com/v1/search", 
+                          headers=headers, 
+                          params={"query": fallback_query, "per_page": 1}, 
+                          timeout=2)  # Shorter timeout for fallback
+        
+        if res.status_code == 200:
+            fallback_data = res.json()
+            if fallback_data.get('photos'):
+                return fallback_data['photos'][0]['src']['medium']
+    except Exception:
+        pass  # Silently fail on fallback
     
     # Last resort placeholder
     return DEFAULT_PLACE_IMAGE
@@ -248,6 +253,9 @@ class PlaceListView(generics.ListAPIView):
         """Internal method to refresh place data from external sources."""
         print(f"Attempting to refresh {place_type} data for {city or 'unknown location'}")
 
+        # Limit refreshes to prevent overload
+        MAX_RECORDS_TO_PROCESS = 15  # Process max 15 places per request
+        
         # City bounding box overrides (centered downtown areas)
         CITY_BBOX_OVERRIDES = {
             "new york": {"south": 40.70, "north": 40.75, "west": -74.01, "east": -73.97},
@@ -261,7 +269,12 @@ class PlaceListView(generics.ListAPIView):
                 bbox = CITY_BBOX_OVERRIDES[city_lower]
                 print(f"Using custom bounding box for {city}")
             else:
-                bbox = get_city_bbox_from_nominatim(city)
+                try:
+                    bbox = get_city_bbox_from_nominatim(city)
+                except Exception as e:
+                    print(f"Error getting city bbox: {e}")
+                    return
+                    
                 if not bbox:
                     print(f"Could not get bbox for city: {city}")
                     return
@@ -291,10 +304,15 @@ class PlaceListView(generics.ListAPIView):
         query = f"[out:json];({''.join(query_parts)});out center;"
 
         try:
-            osm_res = requests.get("https://overpass-api.de/api/interpreter", params={"data": query}, timeout=30)
+            osm_res = requests.get("https://overpass-api.de/api/interpreter", params={"data": query}, timeout=10)
             osm_res.raise_for_status()
             elements = osm_res.json().get("elements", [])
             print(f"Found {len(elements)} OSM elements")
+
+            # Limit processing to prevent timeout
+            if len(elements) > MAX_RECORDS_TO_PROCESS:
+                print(f"Limiting processing to {MAX_RECORDS_TO_PROCESS} elements")
+                elements = elements[:MAX_RECORDS_TO_PROCESS]
 
             now = timezone.now()
             created_count = 0
@@ -318,10 +336,15 @@ class PlaceListView(generics.ListAPIView):
 
                 cuisine = tags.get("cuisine", "food")
                 search_term = f"{name} {cuisine} {place_type}"
-                image_url = get_image_url(search_term, place_type)
-                    
+                
+                # Generate random price and rating first
                 price = generate_random_price(place_type)
                 rating = generate_random_rating()
+                
+                # Only fetch new image if we don't have one already
+                image_url = DEFAULT_PLACE_IMAGE
+                if not existing_places.exists() or not existing_places.first().image_url:
+                    image_url = get_image_url(search_term, place_type)
 
                 if existing_places.exists():
                     place = existing_places.first()
@@ -330,7 +353,9 @@ class PlaceListView(generics.ListAPIView):
                     if place.address != address and address:
                         place.address = address
                     place.last_updated = now
-                    place.image_url = image_url
+                    # Only update image if we don't have one or it's default
+                    if not place.image_url or place.image_url == DEFAULT_PLACE_IMAGE:
+                        place.image_url = image_url
                     place.price = price
                     place.rating = rating
                     place.save()
@@ -352,9 +377,11 @@ class PlaceListView(generics.ListAPIView):
 
             print(f"Created {created_count} new places, updated {updated_count} existing places")
 
+        except requests.exceptions.Timeout:
+            print("Timeout error when fetching OSM data")
         except Exception as e:
             print(f"Error fetching/processing OSM data: {e}")
-            raise
+
 
 class PlaceListCreateView(ListCreateAPIView):
     serializer_class = PlaceSerializer
