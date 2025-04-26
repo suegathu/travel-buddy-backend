@@ -121,11 +121,11 @@ REST_FRAMEWORK = {
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME', default='default_db_name'),
-        'USER': config('DB_USER', default='default_user'),
-        'PASSWORD': config('DB_PASSWORD', default='default_password'),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default=5432, cast=int),
+        'NAME': ('travel_buddy_79g5'),
+        'USER': ('travel_buddy_79g5_user'),
+        'PASSWORD': ('hE4hWEUhgE0B2wpcadW5Ro1tPPRdX45L'),
+        'HOST': 'dpg-d0379lbuibrs73844ccg-a.oregon-postgres.render.com',
+        'PORT': ('5432'),
     }
 }
 

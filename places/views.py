@@ -192,17 +192,13 @@ class PlaceListView(generics.ListAPIView):
         # Check if we need to refresh data
         refresh = self.request.query_params.get('refresh', 'false').lower() == 'true'
         if refresh and (place_type or city or self.request.query_params.get('lat')):
-            # If refresh is requested and we have location info, try to get fresh data
             try:
-                # If place_type is specified, refresh only that type
                 if place_type:
                     self._refresh_place_data(place_type, city)
                 else:
-                    # Otherwise refresh all place types
                     for pt in CATEGORY_TAGS.keys():
                         self._refresh_place_data(pt, city)
-                        
-                # Re-query to get fresh data
+                
                 queryset = Place.objects.all().order_by('id')
                 if place_type:
                     queryset = queryset.filter(place_type__iexact=place_type)
@@ -210,9 +206,8 @@ class PlaceListView(generics.ListAPIView):
                     queryset = queryset.filter(city__icontains=city)
             except Exception as e:
                 print(f"Error refreshing data: {e}")
-                # Continue with existing data
                 pass
-        
+
         # For places with no price or rating, generate and save them
         for place in queryset:
             updated = False
@@ -223,7 +218,6 @@ class PlaceListView(generics.ListAPIView):
                 place.rating = generate_random_rating()
                 updated = True
             if place.image_url is None or place.image_url == "":
-                # Use the same image fetching logic as in the first file
                 if place.place_type == 'restaurant':
                     cuisine = getattr(place, 'cuisine', 'food')
                     search_term = f"{cuisine} restaurant food"
@@ -234,8 +228,21 @@ class PlaceListView(generics.ListAPIView):
             if updated:
                 place.save()
 
-        print(f"Query returned {queryset.count()} places")
-        return queryset
+        # Apply limit if provided
+       # Apply limit if provided, otherwise default to 10
+            limit = self.request.query_params.get('limit')
+            try:
+                limit = int(limit) if limit is not None else 10  # Default to 10 if no limit
+                queryset = queryset[:limit]
+                print(f"Limiting results to {limit} places")
+            except ValueError:
+                print("Invalid limit parameter, defaulting to 10.")
+                queryset = queryset[:10]
+
+            print(f"Query returned {queryset.count()} places")
+            return queryset
+
+
 
     def _refresh_place_data(self, place_type, city=None):
         """Internal method to refresh place data from external sources."""
