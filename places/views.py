@@ -233,21 +233,21 @@ class PlaceListView(generics.ListAPIView):
             if updated:
                 place.save()
 
+        # Get count before applying limit (to avoid the error)
+        result_count = queryset.count()
+        
         # Apply limit if provided
-       # Apply limit if provided, otherwise default to 10
-            limit = self.request.query_params.get('limit')
-            try:
-                limit = int(limit) if limit is not None else 10  # Default to 10 if no limit
-                queryset = queryset[:limit]
-                print(f"Limiting results to {limit} places")
-            except ValueError:
-                print("Invalid limit parameter, defaulting to 10.")
-                queryset = queryset[:10]
+        limit = self.request.query_params.get('limit')
+        try:
+            limit = int(limit) if limit is not None else 10  # Default to 10 if no limit
+            queryset = queryset[:limit]
+            print(f"Limiting results to {limit} places")
+        except ValueError:
+            print("Invalid limit parameter, defaulting to 10.")
+            queryset = queryset[:10]
 
-            print(f"Query returned {queryset.count()} places")
-            return queryset
-
-
+        print(f"Query returned {result_count} places")
+        return queryset
 
     def _refresh_place_data(self, place_type, city=None):
         """Internal method to refresh place data from external sources."""
