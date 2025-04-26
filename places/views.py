@@ -211,10 +211,9 @@ class PlaceListView(generics.ListAPIView):
                     queryset = queryset.filter(city__icontains=city)
             except Exception as e:
                 print(f"Error refreshing data: {e}")
-                pass
 
         # For places with no price or rating, generate and save them
-        for place in queryset:
+        for place in queryset.all():  # Use .all() to evaluate the query once
             updated = False
             if place.price is None or place.price == 0:
                 place.price = generate_random_price(place.place_type)
@@ -233,21 +232,78 @@ class PlaceListView(generics.ListAPIView):
             if updated:
                 place.save()
 
-        # Get count before applying limit (to avoid the error)
+        # Get count for logging
         result_count = queryset.count()
+        print(f"Query returned {result_count} places")
         
-        # Apply limit if provided
+        # Apply price filters in memory to preserve the QuerySet
+        filters_min_price = self.request.query_params.get('minPrice')
+        filters_max_price = self.request.query_params.get('maxPrice')
+        
+        # We'll store need_filter flag to know if we need client-side filtering
+        need_filter = False
+        min_price = None
+        max_price = None
+        
+        if filters_min_price:
+            try:
+                min_price = float(filters_min_price)
+                need_filter = True
+            except ValueError:
+                pass
+                
+        if filters_max_price:
+            try:
+                max_price = float(filters_max_price)
+                need_filter = True
+            except ValueError:
+                pass
+
+        # Log the limit (but don't apply it yet)
         limit = self.request.query_params.get('limit')
         try:
-            limit = int(limit) if limit is not None else 10  # Default to 10 if no limit
-            queryset = queryset[:limit]
-            print(f"Limiting results to {limit} places")
+            limit = int(limit) if limit is not None else 10
+            print(f"Will limit results to {limit} places")
         except ValueError:
+            limit = 10
             print("Invalid limit parameter, defaulting to 10.")
-            queryset = queryset[:10]
-
-        print(f"Query returned {result_count} places")
+        
+        # Return the queryset (still a QuerySet object, not a list)
+        # This will be further processed by the filter backends
         return queryset
+
+def filter_queryset(self, queryset):
+    """Override filter_queryset to handle price filtering and limiting after other filters"""
+    # Apply standard filter backends first (will preserve QuerySet)
+    queryset = super().filter_queryset(queryset)
+    
+    # Now apply manual price filtering if needed
+    filters_min_price = self.request.query_params.get('minPrice')
+    filters_max_price = self.request.query_params.get('maxPrice')
+    
+    if filters_min_price:
+        try:
+            min_price = float(filters_min_price)
+            queryset = queryset.filter(price__gte=min_price)
+        except ValueError:
+            pass
+            
+    if filters_max_price:
+        try:
+            max_price = float(filters_max_price)
+            queryset = queryset.filter(price__lte=max_price)
+        except ValueError:
+            pass
+    
+    # Apply limit at the very end, only for the final result
+    limit = self.request.query_params.get('limit')
+    try:
+        limit = int(limit) if limit is not None else 10
+    except ValueError:
+        limit = 10
+    
+    # Now we can safely slice, as this is the last operation
+    return queryset[:limit]
 
     def _refresh_place_data(self, place_type, city=None):
         """Internal method to refresh place data from external sources."""
