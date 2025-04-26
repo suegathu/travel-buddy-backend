@@ -272,38 +272,38 @@ class PlaceListView(generics.ListAPIView):
         # This will be further processed by the filter backends
         return queryset
 
-def filter_queryset(self, queryset):
-    """Override filter_queryset to handle price filtering and limiting after other filters"""
-    # Apply standard filter backends first (will preserve QuerySet)
-    queryset = super().filter_queryset(queryset)
-    
-    # Now apply manual price filtering if needed
-    filters_min_price = self.request.query_params.get('minPrice')
-    filters_max_price = self.request.query_params.get('maxPrice')
-    
-    if filters_min_price:
+    def filter_queryset(self, queryset):
+        """Override filter_queryset to handle price filtering and limiting after other filters"""
+        # Apply standard filter backends first (will preserve QuerySet)
+        queryset = super().filter_queryset(queryset)
+        
+        # Now apply manual price filtering if needed
+        filters_min_price = self.request.query_params.get('minPrice')
+        filters_max_price = self.request.query_params.get('maxPrice')
+        
+        if filters_min_price:
+            try:
+                min_price = float(filters_min_price)
+                queryset = queryset.filter(price__gte=min_price)
+            except ValueError:
+                pass
+                
+        if filters_max_price:
+            try:
+                max_price = float(filters_max_price)
+                queryset = queryset.filter(price__lte=max_price)
+            except ValueError:
+                pass
+        
+        # Apply limit at the very end, only for the final result
+        limit = self.request.query_params.get('limit')
         try:
-            min_price = float(filters_min_price)
-            queryset = queryset.filter(price__gte=min_price)
+            limit = int(limit) if limit is not None else 10
         except ValueError:
-            pass
-            
-    if filters_max_price:
-        try:
-            max_price = float(filters_max_price)
-            queryset = queryset.filter(price__lte=max_price)
-        except ValueError:
-            pass
-    
-    # Apply limit at the very end, only for the final result
-    limit = self.request.query_params.get('limit')
-    try:
-        limit = int(limit) if limit is not None else 10
-    except ValueError:
-        limit = 10
-    
-    # Now we can safely slice, as this is the last operation
-    return queryset[:limit]
+            limit = 10
+        
+        # Now we can safely slice, as this is the last operation
+        return queryset[:limit]
 
     def _refresh_place_data(self, place_type, city=None):
         """Internal method to refresh place data from external sources."""
