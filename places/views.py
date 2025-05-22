@@ -40,9 +40,9 @@ CATEGORY_TAGS = {
 
 # Price range configuration by place type (in KES - Kenyan Shillings)
 PRICE_RANGES = {
-    'hotel': (6500, 65000),      # Hotels: KES 6,500 - KES 65,000 per night
-    'restaurant': (800, 8000),   # Restaurants: KES 800 - KES 8,000 per meal
-    'attraction': (200, 5000),   # Attractions: KES 200 - KES 5,000 per entry
+    'hotel': (2500, 10000),      # Hotels: KES 6,500 - KES 65,000 per night
+    'restaurant': (800, 5000),   # Restaurants: KES 800 - KES 8,000 per meal
+    'attraction': (200, 2000),   # Attractions: KES 200 - KES 5,000 per entry
     'default': (500, 10000)      # Default range for any other type
 }
 
