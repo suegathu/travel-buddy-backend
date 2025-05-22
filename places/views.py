@@ -38,12 +38,12 @@ CATEGORY_TAGS = {
     'attraction': [('tourism', 'attraction'), ('leisure', 'park')],
 }
 
-# Price range configuration by place type
+# Price range configuration by place type (in KES - Kenyan Shillings)
 PRICE_RANGES = {
-    'hotel': (50, 500),  # Hotels: $50-$500
-    'restaurant': (10, 100),  # Restaurants: $10-$100
-    'attraction': (5, 50),  # Attractions: $5-$50
-    'default': (10, 200)  # Default range for any other type
+    'hotel': (6500, 65000),      # Hotels: KES 6,500 - KES 65,000 per night
+    'restaurant': (800, 8000),   # Restaurants: KES 800 - KES 8,000 per meal
+    'attraction': (200, 5000),   # Attractions: KES 200 - KES 5,000 per entry
+    'default': (500, 10000)      # Default range for any other type
 }
 
 # Helper functions
@@ -59,9 +59,9 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 def generate_random_price(place_type):
-    """Generate a random price based on place type."""
+    """Generate a random price based on place type in KES."""
     min_price, max_price = PRICE_RANGES.get(place_type.lower(), PRICE_RANGES['default'])
-    return round(random.uniform(min_price, max_price), 2)
+    return round(random.uniform(min_price, max_price), 0)  # Round to whole KES
 
 def generate_random_rating():
     """Generate a random rating between 1.0 and 5.0."""
