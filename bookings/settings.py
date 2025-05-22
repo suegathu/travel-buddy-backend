@@ -32,6 +32,7 @@ ALLOWED_HOSTS = [
     'travel-buddy-backend-8kf4.onrender.com',
     'localhost', '127.0.0.1', 
     "https://travel-buddy-frontend-xi.vercel.app",
+    'http://localhost:5173/',
     'http://localhost:5173'
     ]
 
